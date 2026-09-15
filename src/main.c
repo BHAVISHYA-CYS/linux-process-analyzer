@@ -4,6 +4,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <time.h>
 
 /* ---------- Function declarations ---------- */
 
@@ -19,11 +20,15 @@ void read_process_memory(const char *pid);
 
 unsigned long read_process_cpu(const char *pid);
 
+unsigned long long read_process_start_time(const char *pid);
+
 int read_process_io(const char *pid,
                     unsigned long *read_bytes,
                     unsigned long *write_bytes);
 
 unsigned long long read_system_cpu(void);
+
+void display_process_start_time(unsigned long long start_ticks);
 
 
 /* ---------- Check whether directory name is a PID ---------- */
@@ -222,9 +227,10 @@ unsigned long read_process_cpu(const char *pid)
     unsigned long utime;
     unsigned long stime;
 
-    int i;
-
+    char *closing_parenthesis;
     char *token;
+
+    int field;
 
     snprintf(path, sizeof(path),
              "/proc/%s/stat", pid);
@@ -245,15 +251,30 @@ unsigned long read_process_cpu(const char *pid)
     fclose(file);
 
     /*
-     * /proc/PID/stat contains many fields.
+     * The second field (process name) is enclosed
+     * in parentheses and may contain spaces.
+     *
+     * Find the final ')' first, then tokenize the
+     * remaining fields safely.
+     */
+
+    closing_parenthesis = strrchr(line, ')');
+
+    if (closing_parenthesis == NULL)
+    {
+        return 0;
+    }
+
+    token = strtok(closing_parenthesis + 2, " ");
+
+    /*
+     * We are starting at field 3.
      *
      * Field 14 = user CPU time
      * Field 15 = kernel CPU time
      */
 
-    token = strtok(line, " ");
-
-    for (i = 1; i <= 13; i++)
+    for (field = 3; field < 14; field++)
     {
         if (token == NULL)
         {
@@ -280,6 +301,157 @@ unsigned long read_process_cpu(const char *pid)
     stime = strtoul(token, NULL, 10);
 
     return utime + stime;
+}
+
+
+/* ---------- Read process start time ---------- */
+
+unsigned long long read_process_start_time(const char *pid)
+{
+    char path[256];
+    char line[2048];
+
+    FILE *file;
+
+    char *closing_parenthesis;
+    char *token;
+
+    int field;
+
+    unsigned long long start_time;
+
+    snprintf(path, sizeof(path),
+             "/proc/%s/stat", pid);
+
+    file = fopen(path, "r");
+
+    if (file == NULL)
+    {
+        return 0;
+    }
+
+    if (fgets(line, sizeof(line), file) == NULL)
+    {
+        fclose(file);
+        return 0;
+    }
+
+    fclose(file);
+
+    closing_parenthesis = strrchr(line, ')');
+
+    if (closing_parenthesis == NULL)
+    {
+        return 0;
+    }
+
+    /*
+     * Start tokenizing at field 3.
+     *
+     * Field 22 = process start time.
+     */
+
+    token = strtok(closing_parenthesis + 2, " ");
+
+    for (field = 3; field < 22; field++)
+    {
+        if (token == NULL)
+        {
+            return 0;
+        }
+
+        token = strtok(NULL, " ");
+    }
+
+    if (token == NULL)
+    {
+        return 0;
+    }
+
+    start_time = strtoull(token, NULL, 10);
+
+    return start_time;
+}
+
+
+/* ---------- Display process start time ---------- */
+
+void display_process_start_time(unsigned long long start_ticks)
+{
+    long clock_ticks;
+    FILE *file;
+
+    char line[256];
+
+    double uptime_seconds;
+    double process_uptime;
+
+    time_t current_time;
+    time_t process_start;
+
+    struct tm *time_info;
+
+    if (start_ticks == 0)
+    {
+        printf("Start Time: unavailable\n");
+        return;
+    }
+
+    clock_ticks = sysconf(_SC_CLK_TCK);
+
+    if (clock_ticks <= 0)
+    {
+        printf("Start Time: unavailable\n");
+        return;
+    }
+
+    file = fopen("/proc/uptime", "r");
+
+    if (file == NULL)
+    {
+        printf("Start Time: unavailable\n");
+        return;
+    }
+
+    if (fgets(line, sizeof(line), file) == NULL)
+    {
+        fclose(file);
+        printf("Start Time: unavailable\n");
+        return;
+    }
+
+    fclose(file);
+
+    if (sscanf(line, "%lf", &uptime_seconds) != 1)
+    {
+        printf("Start Time: unavailable\n");
+        return;
+    }
+
+    process_uptime =
+        (double)start_ticks / (double)clock_ticks;
+
+    current_time = time(NULL);
+
+    process_start =
+        current_time -
+        (time_t)(uptime_seconds - process_uptime);
+
+    time_info = localtime(&process_start);
+
+    if (time_info == NULL)
+    {
+        printf("Start Time: unavailable\n");
+        return;
+    }
+
+    printf("Start Time: %04d-%02d-%02d %02d:%02d:%02d\n",
+           time_info->tm_year + 1900,
+           time_info->tm_mon + 1,
+           time_info->tm_mday,
+           time_info->tm_hour,
+           time_info->tm_min,
+           time_info->tm_sec);
 }
 
 
@@ -402,6 +574,8 @@ int main(void)
     unsigned long process_cpu_delta;
     unsigned long long system_cpu_delta;
 
+    unsigned long long process_start_ticks;
+
     double cpu_percentage;
 
     unsigned long read_before;
@@ -431,14 +605,21 @@ int main(void)
 
     read_process_memory(pid);
 
-    process_cpu_before = read_process_cpu(pid);
+    process_start_ticks =
+        read_process_start_time(pid);
+
+    display_process_start_time(process_start_ticks);
+
+    process_cpu_before =
+        read_process_cpu(pid);
 
     if (process_cpu_before == 0)
     {
         printf("CPU information may be unavailable.\n");
     }
 
-    system_cpu_before = read_system_cpu();
+    system_cpu_before =
+        read_system_cpu();
 
     printf("CPU Time: %lu ticks\n",
            process_cpu_before);
@@ -456,6 +637,7 @@ int main(void)
     else
     {
         printf("I/O information not available\n");
+
         read_before = 0;
         write_before = 0;
     }
@@ -464,15 +646,19 @@ int main(void)
 
     sleep(1);
 
-    process_cpu_after = read_process_cpu(pid);
+    process_cpu_after =
+        read_process_cpu(pid);
 
-    system_cpu_after = read_system_cpu();
+    system_cpu_after =
+        read_system_cpu();
 
     process_cpu_delta =
-        process_cpu_after - process_cpu_before;
+        process_cpu_after -
+        process_cpu_before;
 
     system_cpu_delta =
-        system_cpu_after - system_cpu_before;
+        system_cpu_after -
+        system_cpu_before;
 
     printf("Process CPU activity: %lu ticks\n",
            process_cpu_delta);
@@ -539,3 +725,4 @@ int main(void)
 
     return 0;
 }
+
