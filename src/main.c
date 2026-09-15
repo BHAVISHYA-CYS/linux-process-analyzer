@@ -7,6 +7,7 @@
 #include <time.h>
 
 /* ---------- Function declarations ---------- */
+void read_process_threads(const char *pid);
 void read_process_priority(const char *pid);
 int is_pid_directory(const char *name);
 
@@ -560,6 +561,40 @@ unsigned long long read_system_cpu(void)
 
 
 /* ---------- Main program ---------- */
+/* ---------- Read process thread count ---------- */
+
+void read_process_threads(const char *pid)
+{
+    char path[256];
+    char line[256];
+
+    FILE *file;
+
+    snprintf(path, sizeof(path),
+             "/proc/%s/status", pid);
+
+    file = fopen(path, "r");
+
+    if (file == NULL)
+    {
+        printf("Threads: unavailable\n");
+        return;
+    }
+
+    while (fgets(line, sizeof(line), file) != NULL)
+    {
+        if (strncmp(line, "Threads:", 8) == 0)
+        {
+            printf("%s", line);
+            fclose(file);
+            return;
+        }
+    }
+
+    fclose(file);
+
+    printf("Threads: unavailable\n");
+}
 /* ---------- Read process priority and nice value ---------- */
 
 void read_process_priority(const char *pid)
@@ -706,9 +741,8 @@ int main(void)
     read_process_info(pid);
 
 read_process_memory(pid);
-
 read_process_priority(pid);
-
+read_process_threads(pid);
 process_start_ticks =
     read_process_start_time(pid);
     display_process_start_time(process_start_ticks);
