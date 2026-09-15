@@ -11,6 +11,8 @@ int is_pid_directory(const char *name);
 
 void read_process_name(const char *pid);
 
+void read_process_command(const char *pid);
+
 void read_process_info(const char *pid);
 
 void read_process_memory(const char *pid);
@@ -77,6 +79,59 @@ void read_process_name(const char *pid)
     }
 
     fclose(file);
+}
+
+
+/* ---------- Read process command line ---------- */
+
+void read_process_command(const char *pid)
+{
+    char path[256];
+    char command[4096];
+
+    FILE *file;
+
+    size_t bytes_read;
+    size_t i;
+
+    snprintf(path, sizeof(path),
+             "/proc/%s/cmdline", pid);
+
+    file = fopen(path, "r");
+
+    if (file == NULL)
+    {
+        printf("Command: unavailable\n");
+        return;
+    }
+
+    bytes_read = fread(command, 1, sizeof(command) - 1, file);
+
+    fclose(file);
+
+    if (bytes_read == 0)
+    {
+        printf("Command: unavailable\n");
+        return;
+    }
+
+    command[bytes_read] = '\0';
+
+    /*
+     * /proc/PID/cmdline separates command-line
+     * arguments with null characters.
+     * Convert them to spaces for display.
+     */
+
+    for (i = 0; i < bytes_read; i++)
+    {
+        if (command[i] == '\0')
+        {
+            command[i] = ' ';
+        }
+    }
+
+    printf("Command: %s\n", command);
 }
 
 
@@ -364,6 +419,8 @@ int main(void)
     printf("\nProcess Information for PID %s:\n", pid);
 
     read_process_name(pid);
+
+    read_process_command(pid);
 
     read_process_info(pid);
 
