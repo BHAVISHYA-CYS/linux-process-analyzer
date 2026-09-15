@@ -7,7 +7,7 @@
 #include <time.h>
 
 /* ---------- Function declarations ---------- */
-
+void read_process_priority(const char *pid);
 int is_pid_directory(const char *name);
 
 void read_process_name(const char *pid);
@@ -560,7 +560,109 @@ unsigned long long read_system_cpu(void)
 
 
 /* ---------- Main program ---------- */
+/* ---------- Read process priority and nice value ---------- */
 
+void read_process_priority(const char *pid)
+{
+    char path[256];
+    char line[2048];
+
+    FILE *file;
+
+    char *closing_parenthesis;
+    char *token;
+
+    int field;
+
+    long priority;
+    long nice_value;
+
+    snprintf(path, sizeof(path),
+             "/proc/%s/stat", pid);
+
+    file = fopen(path, "r");
+
+    if (file == NULL)
+    {
+        printf("Priority: unavailable\n");
+        printf("Nice: unavailable\n");
+        return;
+    }
+
+    if (fgets(line, sizeof(line), file) == NULL)
+    {
+        fclose(file);
+
+        printf("Priority: unavailable\n");
+        printf("Nice: unavailable\n");
+
+        return;
+    }
+
+    fclose(file);
+
+    /*
+     * The process name is field 2 and is enclosed
+     * in parentheses. Find the final ')' first.
+     */
+
+    closing_parenthesis = strrchr(line, ')');
+
+    if (closing_parenthesis == NULL)
+    {
+        printf("Priority: unavailable\n");
+        printf("Nice: unavailable\n");
+
+        return;
+    }
+
+    /*
+     * Start tokenizing at field 3.
+     *
+     * Field 18 = priority
+     * Field 19 = nice value
+     */
+
+    token = strtok(closing_parenthesis + 2, " ");
+
+    for (field = 3; field < 18; field++)
+    {
+        if (token == NULL)
+        {
+            printf("Priority: unavailable\n");
+            printf("Nice: unavailable\n");
+
+            return;
+        }
+
+        token = strtok(NULL, " ");
+    }
+
+    if (token == NULL)
+    {
+        printf("Priority: unavailable\n");
+        printf("Nice: unavailable\n");
+
+        return;
+    }
+
+    priority = strtol(token, NULL, 10);
+
+    token = strtok(NULL, " ");
+
+    if (token == NULL)
+    {
+        printf("Priority: unavailable\n");
+        printf("Nice: unavailable\n");
+
+        return;
+    }
+
+    nice_value = strtol(token, NULL, 10);
+
+    printf("Priority: %ld\n", priority);
+    printf("Nice:     %ld\n", nice_value);
+}
 int main(void)
 {
     char pid[32];
@@ -603,11 +705,12 @@ int main(void)
 
     read_process_info(pid);
 
-    read_process_memory(pid);
+read_process_memory(pid);
 
-    process_start_ticks =
-        read_process_start_time(pid);
+read_process_priority(pid);
 
+process_start_ticks =
+    read_process_start_time(pid);
     display_process_start_time(process_start_ticks);
 
     process_cpu_before =
