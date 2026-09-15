@@ -118,8 +118,8 @@ void read_process_command(const char *pid)
     command[bytes_read] = '\0';
 
     /*
-     * /proc/PID/cmdline separates command-line
-     * arguments with null characters.
+     * /proc/PID/cmdline separates arguments
+     * with null characters.
      * Convert them to spaces for display.
      */
 
@@ -135,7 +135,7 @@ void read_process_command(const char *pid)
 }
 
 
-/* ---------- Read process state and UID ---------- */
+/* ---------- Read process state, PPID and UID ---------- */
 
 void read_process_info(const char *pid)
 {
@@ -158,6 +158,11 @@ void read_process_info(const char *pid)
     while (fgets(line, sizeof(line), file) != NULL)
     {
         if (strncmp(line, "State:", 6) == 0)
+        {
+            printf("%s", line);
+        }
+
+        if (strncmp(line, "PPid:", 5) == 0)
         {
             printf("%s", line);
         }
